@@ -274,37 +274,55 @@ void st_modeToString(mode_t st_mode)
 }
 void showFileInfo(struct stat fileStat, char *path,char *name,int extended)
 {
-		struct tm *t;
-		struct group* grupo;
-		struct passwd* user;
+    struct tm *t;
+    struct group* grupo;
+    struct passwd* user;
+    int tipo;
+    char linkName[1024];
 
-		lstat(path,&fileStat);
-		if ((grupo = getgrent())){
-				while(grupo->gr_gid != fileStat.st_gid) { grupo = getgrent(); }
-		}
-		endgrent();
-		user = getpwuid(fileStat.st_uid);
-		
-		if(extended==1)
-		{    
-				printf("%li\t%li\t",fileStat.st_ino,fileStat.st_blocks);
-				st_modeToString(fileStat.st_mode);
-				t=gmtime(&fileStat.st_ctime);
-				printf("\t%s\t%s\t%d\t%li\t%d-%d-%d\t%s\n",
-					user->pw_name,grupo->gr_name,(int)fileStat.st_nlink,
-					fileStat.st_size,t->tm_year+1900,t->tm_mon,t->tm_mday,name);
-		} 
-		else
-				if(strncmp(name,".",1))
+    lstat(path,&fileStat);
+    if ((grupo = getgrent()))
+        while(grupo->gr_gid != fileStat.st_gid) 
+            grupo = getgrent();
+    endgrent();
+    user = getpwuid(fileStat.st_uid);
 
-				{
-						printf("%li\t%li\t",fileStat.st_ino,fileStat.st_blocks);
-						st_modeToString(fileStat.st_mode);
-						t=gmtime(&fileStat.st_ctime);
-						printf("\t%s\t%s\t%d\t%li\t%d-%d-%d\t%s\n",
-							user->pw_name,grupo->gr_name,(int)fileStat.st_nlink,
-							fileStat.st_size,t->tm_year+1900,t->tm_mon,t->tm_mday,name);
-				}
+    if(lstat(path,&fileStat)==-1){
+        printf("Imposible obtener los atributos del archivo: %s\n", path);
+    }
+    else{
+        if(S_ISREG(fileStat.st_mode)!=0) tipo=1;    /*Fichero*/
+        if(S_ISDIR(fileStat.st_mode)!=0) tipo=2;    /*Directorio*/
+        if(S_ISLNK(fileStat.st_mode)!=0) tipo=3;    /*Enlace simbolico*/
+    }
+    if(tipo==3)
+    {
+        char buf[PATH_MAX];
+        realpath(path, buf);
+        snprintf(linkName,1024,"%s -> %s",name,buf);
+    }
+    else
+        snprintf(linkName,1024,"%s",name);
+    if(extended)
+    {    
+        printf("%li\t%li\t",fileStat.st_ino,fileStat.st_blocks);
+        st_modeToString(fileStat.st_mode);
+        t=gmtime(&fileStat.st_ctime);
+        printf("\t%d\t%s\t%s\t%li\t%d-%d-%d\t%d:%d\t%s\n",
+                (int)fileStat.st_nlink,user->pw_name,grupo->gr_name,
+                fileStat.st_size,t->tm_year+1900,t->tm_mon,t->tm_mday,t->tm_hour,t->tm_min ,linkName);
+    } 
+    else
+        if(strncmp(name,".",1))
+
+        {
+            printf("%li\t%li\t",fileStat.st_ino,fileStat.st_blocks);
+            st_modeToString(fileStat.st_mode);
+            t=gmtime(&fileStat.st_ctime);
+            printf("\t%d\t%s\t%s\t%li\t%d-%d-%d\t%d:%d\t%s\n",
+                    (int)fileStat.st_nlink,user->pw_name,grupo->gr_name,
+                    fileStat.st_size,t->tm_year+1900,t->tm_mon,t->tm_mday,t->tm_hour,t->tm_min,linkName);
+        }
 }
 int ls(char* argv[MAX_ARGS],int argc)
 {
@@ -322,6 +340,7 @@ int ls(char* argv[MAX_ARGS],int argc)
 
     if(lstat(path,&fileStat)==-1){
         printf("Imposible obtener los atributos del archivo: %s\n", path);
+        free(path);
         return(0);
     }
     else{
@@ -335,6 +354,7 @@ int ls(char* argv[MAX_ARGS],int argc)
         dirp = opendir(path);
         if (dirp == NULL){
             printf("Error: No se puede abrir el directorio\n");
+            free(path);
             return 0;
         }
 
