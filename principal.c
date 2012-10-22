@@ -9,20 +9,22 @@ grupo 3.3.1
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/wait.h>
 #include <error.h>
 #include <limits.h>
 #include <errno.h>
 #include <time.h>
-#include <sys/resource.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <dirent.h>
 #include <pwd.h>
 #include <grp.h>
 
+#include <sys/resource.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+
 #include "valList.h"
 #include "procList.h"
+#include "fs.h"
 
 #define LINE_LENGTH 2048
 #define MAX_ARGS (LINE_LENGTH / 2)
@@ -33,6 +35,105 @@ grupo 3.3.1
 
 valListNode *valList;
 procListNode *procList;
+
+int doMkfs(char **params) 
+{
+	int maxFiles; int maxBytes;
+	if (!params[1] || !params[2]) 
+    {
+        printf("syntax: MKFS maxfiles maxbytes \n"); 
+        return 0;
+    }
+	
+	maxFiles = atoi(params[1]);
+	maxBytes = atoi(params[2]);
+	mkFS(maxFiles, maxBytes);
+	return 0;
+}
+
+int doDropfs(char ** params)
+{
+	if (-1 != dropFS())
+		printf("DROPFS completed successfully\n");
+	else 
+		printf("DROPFS failed\n");
+	return 0;
+}
+
+int doMountfs(t_fs **fs) 
+{
+	
+	*fs = mountFS();
+	if (! (*fs))
+		printf("unable to mount virtual file-system\n");
+	else
+		printf("filesystems was successfully mounted\n");
+	
+	return 0;
+}
+
+int doUmountfs(t_fs **fs)
+{
+	if (umountFS(fs) == 0)
+		printf("fs umounted sucessfully\n");
+	else 
+		printf("umountFS failed\n");
+	
+	return 0;
+}
+int doPutfs (char ** params, t_fs *fs)
+{
+	int size = putFS(fs, params[1],params[2]);	
+
+	if (!params[1] || !params[2]) 
+    {
+        printf("syntax: PUTFS src dst \n"); 
+        return 0;
+    }
+	
+	if (-1 != size)
+		printf("PUTFS succeeded: %d bytes were uploaded into file %s\n", size,params[2]);
+	else
+		printf("PUTFS failed\n");	
+	return 0;
+}
+int doGetfs(char ** params, t_fs *fs)
+{
+	int size = getFS(fs, params[1],params[2]);	
+	if (!params[1] || !params[2]) 
+    {
+        printf("syntax: GETFS src dst \n"); 
+        return 0;
+    }
+	
+	if (-1 != size)
+		printf("GETFS succeeded: %d bytes were downloaded into file %s\n", size,params[2]);
+	else
+		printf("GETFS failed\n");		
+	return 0;
+}
+int doDeletefs(char ** params, t_fs *fs)
+{
+    
+	int size = deleteFS(fs, params[1]);	
+	if (!params[1] ) 
+    {
+        printf("syntax: DELETEFS file\n "); 
+        return 0;
+    }
+	
+	if (-1 != size)
+		printf("DELETEFS succeeded: file %s has been removed\n", params[1]);
+	else
+		printf("DELETEFS failed \n");	
+	return 0;
+}
+	
+int doLsfs(char ** params, t_fs *fs)
+{
+	lsFS(fs);
+	return 0;
+}
 
 int export(int argc, char *argv[], char *line)
 {
@@ -305,10 +406,10 @@ void showFileInfo(struct stat fileStat, char *path,char *name,int extended)
         snprintf(linkName,1024,"%s",name);
     if(extended)
     {    
-        printf("%li\t%li\t",fileStat.st_ino,fileStat.st_blocks);
+        printf("%-8li %-4li ",fileStat.st_ino,(fileStat.st_blocks/2));
         st_modeToString(fileStat.st_mode);
         t=gmtime(&fileStat.st_ctime);
-        printf("\t%d\t%s\t%s\t%li\t%d-%d-%d\t%d:%d\t%s\n",
+        printf("  %-3d %s\t%s\t%-8li  %-4d-%-2d-%-2d  %-2d:%-2d  %s\n",
                 (int)fileStat.st_nlink,user->pw_name,grupo->gr_name,
                 fileStat.st_size,t->tm_year+1900,t->tm_mon,t->tm_mday,t->tm_hour,t->tm_min ,linkName);
     } 
@@ -316,10 +417,10 @@ void showFileInfo(struct stat fileStat, char *path,char *name,int extended)
         if(strncmp(name,".",1))
 
         {
-            printf("%li\t%li\t",fileStat.st_ino,fileStat.st_blocks);
+            printf("%-8li %-4li ",fileStat.st_ino,(fileStat.st_blocks/2));
             st_modeToString(fileStat.st_mode);
             t=gmtime(&fileStat.st_ctime);
-            printf("\t%d\t%s\t%s\t%li\t%d-%d-%d\t%d:%d\t%s\n",
+            printf("  %-3d %s\t%s\t%-8li  %-4d-%-2d-%-2d  %-2d:%-2d  %s\n",
                     (int)fileStat.st_nlink,user->pw_name,grupo->gr_name,
                     fileStat.st_size,t->tm_year+1900,t->tm_mon,t->tm_mday,t->tm_hour,t->tm_min,linkName);
         }
@@ -408,7 +509,7 @@ int ls(char* argv[MAX_ARGS],int argc)
     free(path);
     return 0;
 }
-int parse(char *line)
+int parse(char *line, t_fs **fs)
 {
     char *argv[MAX_ARGS];
     int argc = 0;
@@ -447,6 +548,30 @@ int parse(char *line)
         return background(argv);
     if ((!strcmp(argv[0],"jobs"))&&(argc>=2))		/* información sobre los proc 2º plano */
         return jobOps(argv,argc);
+	if (!strcmp(argv[0], "MKFS")) 
+		return doMkfs(argv);
+	if (!strcmp(argv[0], "DROPFS")) 
+		return doDropfs(argv);
+	if (!strcmp(argv[0], "MOUNTFS")) 
+    {
+		doMountfs(fs);
+		return 0;
+	}
+	if (!strcmp(argv[0], "UMOUNTFS")) 
+    {
+		doUmountfs(fs);			
+		return 0;
+	}
+	if (!strcmp(argv[0], "PUTFS")) 
+    {
+		doPutfs(argv, *fs);
+		return 0;
+	}
+	if (!strcmp(argv[0], "GETFS")) 
+    {
+		doGetfs(argv,*fs);
+		return 0;
+	}
     if (argc>=1)									/* "execute" y devolver control */
         return executeInFront(argv,argc);
 
@@ -458,6 +583,8 @@ int main(int argc, char *argv[], char *env[])
 {
     int q=0;
     char *l;
+    t_fs *fs=NULL;
+
 
     l = malloc(LINE_LENGTH*sizeof(char));
 
@@ -468,8 +595,8 @@ int main(int argc, char *argv[], char *env[])
     {
         printf("# ");
         fgets(l, LINE_LENGTH, stdin);
-        q = parse(l);
+        q = parse(l,&fs);
     }
     free(l);	
-    return 0;
+    return 0;   /*returns 0*/
 }
